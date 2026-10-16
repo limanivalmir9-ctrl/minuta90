@@ -4,20 +4,20 @@ import { supabase } from "@/lib/supabase"
 
 const MENU = [
   {id:'ballina', label:'Ballina', icon:'⊞'},
-  {id:'ndeshjet-sot', label:'Ndeshjet Sot', icon:'🖥️', dot:true},
+  {id:'ndeshjet-sot', label:'Ndeshjet Sot', icon:'🖥', dot:true},
   {id:'ndeshjet', label:'Ndeshjet', icon:'📅'},
   {id:'klubet', label:'Klubet', icon:'👥'},
   {id:'stadiumet', label:'Stadiumet', icon:'📍'},
-  {id:'agjentet', label:'Agjentët', icon:'🛡️'},
-  {id:'kontaktet', label:'Kontaktet', icon:'✉️'},
+  {id:'agjentet', label:'Agjentët', icon:'🛡'},
+  {id:'kontaktet', label:'Kontaktet', icon:'✉'},
   {id:'kompeticionet', label:'Kompeticionet', icon:'🏆'},
   {id:'yjet', label:'Yjet e Javës', icon:'⭐'},
   {id:'magazina', label:'Magazina', icon:'⚽'},
   {id:'statistikat', label:'Statistikat', icon:'📊'},
-  {id:'dukshmeria', label:'Dukshmëria e Profileve', icon:'👁️'},
-  {id:'transfero', label:'Transfero Klubet', icon:'➡️'},
+  {id:'dukshmeria', label:'Dukshmëria e Profileve', icon:'👁'},
+  {id:'transfero', label:'Transfero Klubet', icon:'➡'},
   {id:'trofete', label:'Trofetë', icon:'🏅'},
-  {id:'trajneret', label:'Trajnerët', icon:'🧑‍🏫'},
+  {id:'trajneret', label:'Trajnerët', icon:'🧑🏫'},
   {id:'gjyqtaret', label:'Gjyqtarët', icon:'👤'},
   {id:'tabelat', label:'Tabelat', icon:'📋'},
   {id:'golashenuesit', label:'Golashënuesit', icon:'🥅'},
@@ -27,7 +27,7 @@ const MENU = [
 ]
 
 export default function AdminKS() {
-  const [active, setActive] = useState('klubet')
+  const [active, setActive] = useState('ndeshjet')
   const [teams, setTeams] = useState<any[]>([])
   const [stadiums, setStadiums] = useState<any[]>([])
   const [competitions, setCompetitions] = useState<any[]>([])
@@ -51,12 +51,27 @@ export default function AdminKS() {
   const [clubLogoPreview, setClubLogoPreview] = useState('')
   const [editingClubId, setEditingClubId] = useState<string|null>(null)
 
+  // Stadiumet form
+  const [stadName, setStadName] = useState('')
+  const [stadCity, setStadCity] = useState('Gjilan')
+  const [stadCapacity, setStadCapacity] = useState('10000')
+
+  // Ndeshjet form
+  const [matchCompId, setMatchCompId] = useState('')
+  const [matchHomeId, setMatchHomeId] = useState('')
+  const [matchAwayId, setMatchAwayId] = useState('')
+  const [matchStadiumId, setMatchStadiumId] = useState('')
+  const [matchDate, setMatchDate] = useState('')
+  const [matchStatus, setMatchStatus] = useState('scheduled')
+
   const load = async () => {
     const {data:t} = await supabase.from('teams').select('*, stadiums(name), competitions(name)').order('name')
     const {data:s} = await supabase.from('stadiums').select('*').order('name')
     const {data:c} = await supabase.from('competitions').select('*').order('tier')
-    const {data:m} = await supabase.from('matches').select('*').order('created_at',{ascending:false}).limit(20)
-    setTeams(t||[]); setStadiums(s||[]); setCompetitions(c||[]); setMatches(m||[])
+    const {data:m} = await supabase.from('matches').select('*, teams!matches_home_team_id_fkey(name), stadiums(name)').order('created_at',{ascending:false}).limit(50)
+    // fallback nese foreign key emrat ndryshojne
+    const {data:m2} = m && m.length===0 ? await supabase.from('matches').select('*').order('created_at',{ascending:false}).limit(50) : {data:null}
+    setTeams(t||[]); setStadiums(s||[]); setCompetitions(c||[]); setMatches((m&&m.length?m:m2)||[])
   }
   useEffect(()=>{ load() },[])
 
@@ -88,7 +103,6 @@ export default function AdminKS() {
         if(!error){ const {data}=supabase.storage.from('team-logos').getPublicUrl(fn); logoUrl=data.publicUrl }
       }catch(e){}
     }
-    // nese je brenda nje kompeticioni, perdore ate
     const finalCompId = clubCompId || (selectedCompId && selectedCompId!=='none'? selectedCompId : null)
     const payload:any = {name:clubName, short_name:clubName.slice(0,3).toUpperCase(), city:clubCity, logo_url:logoUrl, stadium_id:clubStadiumId||null, competition_id:finalCompId}
     const res = editingClubId? await supabase.from('teams').update(payload).eq('id',editingClubId) : await supabase.from('teams').insert(payload).select()
@@ -98,11 +112,54 @@ export default function AdminKS() {
   const editClub = (t:any) => { setEditingClubId(t.id); setClubName(t.name); setClubCity(t.city||''); setClubStadiumId(t.stadium_id||''); setClubCompId(t.competition_id||''); setClubLogoPreview(t.logo_url||'') }
   const deleteClub = async (id:string) => { if(!confirm('Fshij klubin?'))return; await supabase.from('teams').delete().eq('id',id); load() }
 
+  const saveStadium = async () => {
+    if(!stadName) return alert('Emri i stadiumit!')
+    const payload = {name:stadName, city:stadCity, capacity: parseInt(stadCapacity)||0}
+    const {error} = await supabase.from('stadiums').insert(payload)
+    if(error) alert(error.message)
+    else { setStadName(''); setStadCity('Gjilan'); setStadCapacity('10000'); load() }
+  }
+  const deleteStadium = async (id:string) => { if(!confirm('Fshij stadiumin?'))return; await supabase.from('stadiums').delete().eq('id',id); load() }
+
+  const saveMatch = async () => {
+    if(!matchHomeId || !matchAwayId) return alert('Zgjidh dy ekipet!')
+    if(matchHomeId===matchAwayId) return alert('Ekipet duhet te jene te ndryshme!')
+    const payload:any = {
+      competition_id: matchCompId||null,
+      home_team_id: matchHomeId,
+      away_team_id: matchAwayId,
+      stadium_id: matchStadiumId||null,
+      match_date: matchDate? new Date(matchDate).toISOString() : new Date().toISOString(),
+      status: matchStatus,
+      home_score: 0,
+      away_score: 0
+    }
+    // provo me emra kolonash alternative nese deshton
+    let {error} = await supabase.from('matches').insert(payload)
+    if(error){
+      // provo me club_id
+      const payload2:any = {
+        competition_id: matchCompId||null,
+        home_club_id: matchHomeId,
+        away_club_id: matchAwayId,
+        stadium_id: matchStadiumId||null,
+        match_date: payload.match_date,
+        status: matchStatus
+      }
+      const res2 = await supabase.from('matches').insert(payload2)
+      error = res2.error as any
+      if(error) return alert('Gabim: '+error.message)
+    }
+    setMatchHomeId(''); setMatchAwayId(''); setMatchDate(''); load()
+    alert('Ndeshja u shtua!')
+  }
+  const deleteMatch = async (id:string) => { if(!confirm('Fshij ndeshjen?'))return; await supabase.from('matches').delete().eq('id',id); load() }
+
   return (
     <div className="min-h-screen bg-[#080e1c] text-white flex overflow-hidden">
       <aside className="w- min-w- bg-[#0f172a] border-r border-white/[0.07] flex flex-col h-screen sticky top-0">
         <div className="p-3.5 border-b border-white/[0.07] flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-[#1e293b] rounded-md flex items-center justify-center">🛡️</div>
+          <div className="w-7 h-7 bg-[#1e293b] rounded-md flex items-center justify-center">🛡</div>
           <div><div className="font-black text-">KS Admin</div><div className="text- text-amber-400">⭐ Super Admin</div></div>
         </div>
         <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
@@ -201,7 +258,76 @@ export default function AdminKS() {
             </>
           )}
 
-          {active==='ballina' && <div><h1 className="text- font-black mb-4">Ballina</h1><div className="grid grid-cols-4 gap-3"><div className="bg-[#151e32] p-4 rounded-lg border border-white/10"><div className="text- text-slate-400">Kompeticione</div><div className="text-xl font-black">{competitions.length}</div></div><div className="bg-[#151e32] p-4 rounded-lg border border-white/10"><div className="text- text-slate-400">Klube</div><div className="text-xl font-black">{teams.length}</div></div></div></div>}
+          {active==='stadiumet' && (
+            <>
+              <div className="flex justify-between items-center mb-5">
+                <h1 className="text- font-black">Stadiumet</h1>
+                <span className="text- text-slate-400">{stadiums.length} stadiume</span>
+              </div>
+              <div className="bg-[#151e32] rounded-xl border border-white/10 p-5 mb-6">
+                <h3 className="font-bold text- mb-4">Shto Stadium</h3>
+                <div className="flex gap-3">
+                  <input value={stadName} onChange={e=> setStadName(e.target.value)} placeholder="Stadiumi i Qytetit - Gjilan" className="flex-1 bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-" />
+                  <input value={stadCity} onChange={e=> setStadCity(e.target.value)} placeholder="Qyteti" className="w-32 bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-" />
+                  <input value={stadCapacity} onChange={e=> setStadCapacity(e.target.value)} placeholder="Kapaciteti" className="w-24 bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-" />
+                  <button onClick={saveStadium} className="bg-[#00ff85] text-black font-black px-6 py-2.5 rounded-lg text-">+ SHTO</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {stadiums.map(s=> (
+                  <div key={s.id} className="bg-[#151e32] rounded-xl border border-white/10 p-4 flex items-center justify-between">
+                    <div><div className="font-bold text-">{s.name}</div><div className="text- text-slate-400">{s.city} • {s.capacity}</div></div>
+                    <button onClick={()=> deleteStadium(s.id)} className="w-7 h-7 bg-red-500/10 text-red-400 rounded-md">🗑</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {active==='ndeshjet' && (
+            <>
+              <div className="flex justify-between items-center mb-5">
+                <h1 className="text- font-black">Ndeshjet</h1>
+                <span className="text- text-slate-400">{matches.length} ndeshje</span>
+              </div>
+              <div className="bg-[#151e32] rounded-xl border border-white/10 p-5 mb-6">
+                <h3 className="font-bold text- mb-4">Shto Ndeshje të Re</h3>
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-3"><select value={matchCompId} onChange={e=> setMatchCompId(e.target.value)} className="w-full bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-"><option value="">Kompeticioni</option>{competitions.map(c=> <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                  <div className="col-span-2"><select value={matchHomeId} onChange={e=> setMatchHomeId(e.target.value)} className="w-full bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-"><option value="">Vendas</option>{teams.map(t=> <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+                  <div className="col-span-2"><select value={matchAwayId} onChange={e=> setMatchAwayId(e.target.value)} className="w-full bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-"><option value="">Mysafir</option>{teams.map(t=> <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+                  <div className="col-span-2"><select value={matchStadiumId} onChange={e=> setMatchStadiumId(e.target.value)} className="w-full bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-"><option value="">Stadiumi</option>{stadiums.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                  <div className="col-span-3"><input type="datetime-local" value={matchDate} onChange={e=> setMatchDate(e.target.value)} className="w-full bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-" /></div>
+                </div>
+                <div className="flex gap-3 mt-3">
+                  <select value={matchStatus} onChange={e=> setMatchStatus(e.target.value)} className="w-32 bg-[#0f172a] border border-white/10 rounded-lg p-2.5 text-"><option value="scheduled">E planifikuar</option><option value="live">Live</option><option value="finished">Përfunduar</option></select>
+                  <button onClick={saveMatch} className="bg-[#00ff85] text-black font-black px-8 py-2.5 rounded-lg text-">+ SHTO NDESHJEN</button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {matches.map((m:any)=> (
+                  <div key={m.id} className="bg-[#151e32] rounded-xl border border-white/10 p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="text- font-bold">{teams.find(t=>t.id===m.home_team_id||t.id===m.home_club_id)?.name || m.home_team_id} vs {teams.find(t=>t.id===m.away_team_id||t.id===m.away_club_id)?.name || m.away_team_id}</div>
+                      <span className="text- bg-white/10 px-2 py-1 rounded">{m.status}</span>
+                      <span className="text- text-slate-400">{m.match_date? new Date(m.match_date).toLocaleString('sq-AL') : ''}</span>
+                    </div>
+                    <button onClick={()=> deleteMatch(m.id)} className="w-7 h-7 bg-red-500/10 text-red-400 rounded-md">🗑</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {active==='ballina' && <div><h1 className="text- font-black mb-4">Ballina</h1><div className="grid grid-cols-4 gap-3"><div className="bg-[#151e32] p-4 rounded-lg border border-white/10"><div className="text- text-slate-400">Kompeticione</div><div className="text-xl font-black">{competitions.length}</div></div><div className="bg-[#151e32] p-4 rounded-lg border border-white/10"><div className="text- text-slate-400">Klube</div><div className="text-xl font-black">{teams.length}</div></div><div className="bg-[#151e32] p-4 rounded-lg border border-white/10"><div className="text- text-slate-400">Stadiume</div><div className="text-xl font-black">{stadiums.length}</div></div><div className="bg-[#151e32] p-4 rounded-lg border border-white/10"><div className="text- text-slate-400">Ndeshje</div><div className="text-xl font-black">{matches.length}</div></div></div></div>}
+
+          {!['ballina','kompeticionet','klubet','stadiumet','ndeshjet'].includes(active) && (
+            <div className="flex flex-col items-center justify-center h- text-slate-500">
+              <div className="text-5xl mb-4">🚧</div>
+              <div className="font-bold">Seksioni {MENU.find(m=>m.id===active)?.label} në ndërtim e sipër</div>
+              <div className="text- mt-2">Do shtohet së shpejti - për momentin përdor Kompeticionet / Klubet / Stadiumet / Ndeshjet</div>
+            </div>
+          )}
 
         </div>
       </main>
